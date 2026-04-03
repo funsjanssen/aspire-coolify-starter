@@ -1,0 +1,69 @@
+# Deploy Aspire app to Coolify
+# Based on: https://www.fjan.nl/en/posts/how-to-deploy-a-dotnet-aspire-app-to-coolify-using-github-actions
+#
+# Required secrets:
+#   COOLIFY_WEBHOOK - Webhook URL from Coolify project (Project > Webhooks)
+#   COOLIFY_TOKEN   - API token with 'deploy' permission (Keys & Tokens > API tokens)
+#
+# Coolify project env vars:
+#   API_IMAGE=ghcr.io/<owner>/starter-api:latest
+#   API_PORT=8080
+#   WEBFRONTEND_IMAGE=ghcr.io/<owner>/starter-web:latest
+#   WEBFRONTEND_PORT=8080
+
+name: Deploy to Coolify
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GITHUB_REGISTRY: ghcr.io
+      IMAGE_PREFIX: ${{ github.repository_owner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Aspire CLI
+        run: dotnet tool install -g aspire.cli --prerelease
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GITHUB_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        run: |
+          dotnet publish src/AspireCoolifyStarter.ApiService/AspireCoolifyStarter.ApiService.csproj -t:PublishContainer -c Release
+          docker tag starter-api:latest ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-api:latest
+          docker tag starter-api:latest ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-api:${{ github.sha }}
+          docker push ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-api:latest
+          docker push ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-api:${{ github.sha }}
+
+      - name: Build and push Web image
+        run: |
+          dotnet publish src/AspireCoolifyStarter.Web/AspireCoolifyStarter.Web.csproj -t:PublishContainer -c Release
+          docker tag starter-web:latest ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-web:latest
+          docker tag starter-web:latest ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-web:${{ github.sha }}
+          docker push ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-web:latest
+          docker push ${{ env.GITHUB_REGISTRY }}/${{ env.IMAGE_PREFIX }}/starter-web:${{ github.sha }}
+
+      - name: Deploy to Coolify
+        run: |
+          curl --request GET "${{ secrets.COOLIFY_WEBHOOK }}" --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
