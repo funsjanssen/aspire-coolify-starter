@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "src/AspireCoolifyStarter.AppHost/AspireCoolifyStarter.AppHost.csproj"
+  }
+}
